@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NZ Visitor Spend Drivers</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #F7F4EF; color: #1A2B3C; padding: 16px; min-width: 900px; }
+  h1 { font-size: 17px; font-weight: 600; color: #0D2B45; margin-bottom: 3px; }
+  .subtitle { font-size: 11px; color: #8A9BB0; margin-bottom: 5px; }
+  .ref-note { font-size: 10.5px; color: #8A9BB0; margin-bottom: 12px; background: #EEF2F5; padding: 5px 10px; border-radius: 5px; }
+  .legend { display: flex; gap: 20px; font-size: 12px; color: #5F6B7C; margin-bottom: 14px; }
+  .legend span { display: flex; align-items: center; gap: 6px; }
+  .legend-dot { width: 11px; height: 11px; border-radius: 3px; }
+  .container { display: grid; grid-template-columns: 420px 1fr; gap: 16px; }
+  .panel { background: white; border-radius: 10px; padding: 14px; border: 0.5px solid #D0DAE5; }
+  .panel-title { font-size: 13px; font-weight: 500; color: #0D2B45; margin-bottom: 3px; }
+  .panel-hint { font-size: 11px; color: #8A9BB0; margin-bottom: 10px; }
+  canvas { display: block; }
+  .tooltip { position: fixed; background: #0D2B45; color: white; padding: 7px 11px; border-radius: 6px; font-size: 11px; pointer-events: none; display: none; z-index: 999; line-height: 1.7; }
+</style>
+</head>
+<body>
+
+<h1>NZ Visitor Spend Drivers — MLR Coefficient Plot</h1>
+<p class="subtitle">Multiple Linear Regression | log(spend) model | p &lt; 0.05 | R² = 0.58</p>
+<p class="ref-note">Reference group: Australian visitors, age 30–34, independent travel, arriving in summer, for a holiday</p>
+
+<div class="legend">
+  <span><span class="legend-dot" style="background:#1D9E75;"></span>Spend UP</span>
+  <span><span class="legend-dot" style="background:#D85A30;"></span>Spend DOWN</span>
+  <span style="font-size:11px; color:#8A9BB0;">Right panel: lines = 95% CI &nbsp;|&nbsp; ● = estimate</span>
+</div>
+
+<div class="container">
+  <div class="panel">
+    <div class="panel-title">Overview — average % effect by category</div>
+    <div class="panel-hint">Click a bar to drill down →</div>
+    <canvas id="oc" width="392" style="width:392px;"></canvas>
+  </div>
+  <div class="panel">
+    <div class="panel-title" id="dt">Individual coefficients</div>
+    <div class="panel-hint">← Select a category</div>
+    <canvas id="dc"></canvas>
+  </div>
+</div>
+
+<div class="tooltip" id="tip"></div>
+
+<script>
+const TEAL='#1D9E75',TD='#0F6E56',RED='#D85A30',RD='#993C1D',GRAY='#8A9BB0',NAVY='#0D2B45';
+let sel=0;
+
+const cats=[
+  {n:'Europe',        avg:33.1, dol:1130,  col:TEAL, items:[
+    {n:'Switzerland',pct:42.9,dol:1469,se:0.0432},{n:'Ireland',pct:40.8,dol:1397,se:0.0492},
+    {n:'Scotland',pct:34.9,dol:1193,se:0.0431},{n:'Netherlands',pct:34.8,dol:1192,se:0.034},
+    {n:'Austria',pct:34.0,dol:1164,se:0.0661},{n:'Denmark',pct:32.4,dol:1109,se:0.0568},
+    {n:'Sweden',pct:31.6,dol:1080,se:0.0708},{n:'Wales',pct:27.3,dol:933,se:0.0637},
+    {n:'Germany',pct:26.4,dol:904,se:0.0234},{n:'France',pct:24.4,dol:833,se:0.0315},
+    {n:'England',pct:24.3,dol:832,se:0.0173},{n:'Belgium',pct:22.5,dol:770,se:0.0674},
+    {n:'Italy',pct:17.7,dol:605,se:0.0593},{n:'Spain',pct:14.3,dol:490,se:0.0545}
+  ]},
+  {n:'Asia',          avg:19.6, dol:670,   col:TEAL, items:[
+    {n:'Hong Kong SAR',pct:32.8,dol:1122,se:0.0414},{n:'China',pct:27.7,dol:946,se:0.0297},
+    {n:'Singapore',pct:25.8,dol:883,se:0.0264},{n:'Taiwan',pct:16.8,dol:576,se:0.0414},
+    {n:'Korea',pct:15.2,dol:519,se:0.0446},{n:'Japan',pct:9.6,dol:327,se:0.0292},
+    {n:'Malaysia',pct:9.3,dol:317,se:0.0445}
+  ]},
+  {n:'Age 40–69 (avg)',avg:19.7,dol:674,  col:TEAL, items:[
+    {n:'Age 50–54',pct:24.0,dol:822,se:0.0204},{n:'Age 55–59',pct:20.3,dol:696,se:0.02},
+    {n:'Age 40–44',pct:19.9,dol:682,se:0.0212},{n:'Age 65–69',pct:19.2,dol:658,se:0.0208},
+    {n:'Age 60–64',pct:18.6,dol:636,se:0.0197},{n:'Age 45–49',pct:16.0,dol:549,se:0.0215}
+  ]},
+  {n:'Trip Features', avg:13.8, dol:513,   col:TEAL, items:[
+    {n:'Package Deal',pct:31.4,dol:1073,se:0.0291},{n:'Tour Group',pct:13.3,dol:455,se:0.0162},
+    {n:'First NZ Trip',pct:11.1,dol:380,se:0.012},{n:'Top End Restaurant',pct:12.8,dol:438,se:0.0123},
+    {n:'Depart: Queenstown',pct:12.1,dol:414,se:0.0268},{n:'Honeymoon',pct:9.7,dol:330,se:0.0275},
+    {n:'Region: Otago',pct:9.4,dol:322,se:0.0143},{n:'Year 2025',pct:8.9,dol:303,se:0.0169}
+  ]},
+  {n:'Accommodation', avg:13.2, dol:452,   col:TEAL, items:[
+    {n:'Luxury Hotel',pct:21.3,dol:728,se:0.0182},{n:'Hotel',pct:11.0,dol:376,se:0.0113},
+    {n:'House/Apt Online',pct:10.3,dol:353,se:0.0119},{n:'House/Apt Rent',pct:10.2,dol:350,se:0.022}
+  ]},
+  {n:'Transport',     avg:12.1, dol:374,   col:TEAL, items:[
+    {n:'Campervan',pct:16.7,dol:572,se:0.0277},{n:'Rental Car',pct:14.7,dol:504,se:0.0144},
+    {n:'Limousine',pct:14.0,dol:479,se:0.0288},{n:'Helicopter',pct:8.6,dol:295,se:0.0226},
+    {n:'Plane (domestic)',pct:8.6,dol:295,se:0.0129}
+  ]},
+  {n:'Activity (Hunting)',avg:15.6,dol:532,col:TEAL,items:[
+    {n:'Hunting',pct:15.6,dol:532,se:0.0633}
+  ]},
+  {n:'VFR & Family',  avg:-29.7,dol:-1082, col:RED,  items:[
+    {n:'Carer (Family)',pct:-40.8,dol:-1395,se:0.0352},{n:'Visit Family',pct:-33.7,dol:-1153,se:0.0172},
+    {n:'Wedding/Funeral',pct:-33.2,dol:-1135,se:0.0264},{n:'Visit Friends',pct:-30.4,dol:-1041,se:0.0237},
+    {n:'VFR Other',pct:-20.1,dol:-688,se:0.0526}
+  ]},
+  {n:'Stay w/ Family',avg:-24.4,dol:-836,  col:RED,  items:[
+    {n:'Stay w/ Family',pct:-24.4,dol:-836,se:0.0153}
+  ]},
+  {n:'Young Age',     avg:-23.4,dol:-799,  col:RED,  items:[
+    {n:'Age Under 20',pct:-25.2,dol:-862,se:0.0377},{n:'Age 20–24',pct:-21.5,dol:-735,se:0.0229}
+  ]},
+  {n:'Other Neg.',    avg:-11.5,dol:-394,  col:RED,  items:[
+    {n:'South Africa',pct:-16.8,dol:-574,se:0.0446},{n:'No Maori Exp',pct:-16.5,dol:-566,se:0.014},
+    {n:'Purpose: Other',pct:-21.8,dol:-745,se:0.0277},{n:'Working Holiday',pct:-14.1,dol:-482,se:0.0343},
+    {n:'Own Car',pct:-13.5,dol:-462,se:0.0146},{n:'Business',pct:-13.4,dol:-459,se:0.0386},
+    {n:'Sports',pct:-16.7,dol:-572,se:0.0612},{n:'Arrival: Wellington',pct:-10.1,dol:-345,se:0.024},
+    {n:'Travel w/ Kids',pct:-9.4,dol:-322,se:0.0189},{n:'Winter Arrival',pct:-6.8,dol:-233,se:0.0139}
+  ]}
+];
+
+const sg=v=>v>=0?'+':'';
+const sd=v=>v>=0?'+$':'-$';
+const fm=v=>Math.abs(Math.round(v)).toLocaleString();
+
+// ── OVERVIEW ─────────────────────────────────────────────────────
+function drawOv(){
+  const cv=document.getElementById('oc');
+  const dpr=window.devicePixelRatio||1;
+  const W=392, pL=148, pR=72, pT=8, pB=36, bH=24, gap=9;
+  const rows=cats.length;
+  const H=pT+rows*(bH+gap)+pB;
+  cv.width=W*dpr; cv.height=H*dpr; cv.style.height=H+'px';
+  const ctx=cv.getContext('2d'); ctx.scale(dpr,dpr);
+  const cW=W-pL-pR, mx=45;
+  const z=pL+(0-(-mx))/(2*mx)*cW;
+
+  ctx.clearRect(0,0,W,H);
+
+  // grid + axis
+  [-45,-22.5,0,22.5,45].forEach(t=>{
+    const x=pL+(t-(-mx))/(2*mx)*cW;
+    ctx.strokeStyle=t===0?NAVY:'#E0E8F0'; ctx.lineWidth=t===0?1:0.5;
+    ctx.beginPath();ctx.moveTo(x,pT);ctx.lineTo(x,H-pB+8);ctx.stroke();
+    ctx.fillStyle=GRAY;ctx.font='9.5px sans-serif';ctx.textAlign='center';
+    ctx.fillText(t+'%',x,H-pB+20);
+  });
+
+  cats.forEach((c,i)=>{
+    const y=pT+i*(bH+gap);
+    const v=c.avg, col=i===sel?(c.col===TEAL?'#085041':'#712B13'):c.col;
+    const bW=(v/(2*mx))*cW;
+
+    // bar
+    ctx.fillStyle=col;
+    ctx.beginPath();
+    if(v>=0){
+      ctx.roundRect(z,y,bW,bH,3);
+    } else {
+      ctx.roundRect(z+bW,y,Math.abs(bW),bH,3);
+    }
+    ctx.fill();
+
+    // name
+    ctx.fillStyle=NAVY;ctx.font='11.5px sans-serif';ctx.textAlign='right';
+    ctx.fillText(c.n,pL-8,y+bH/2+4);
+
+    // % label — always outside, never overlapping bar
+    const colD=c.col===TEAL?TD:RD;
+    ctx.fillStyle=colD;ctx.font='bold 10.5px sans-serif';
+    if(v>=0){
+      ctx.textAlign='left';
+      ctx.fillText(sg(v)+v.toFixed(1)+'%', z+bW+5, y+bH/2+4);
+    } else {
+      ctx.textAlign='right';
+      ctx.fillText(sg(v)+v.toFixed(1)+'%', z+bW-5, y+bH/2+4);
+    }
+  });
+
+  cv._hit=cats.map((_,i)=>({y:pT+i*(bH+gap),h:bH,i}));
+  cv._click=i=>{sel=i;drawOv();drawDt(i);};
+  cv._hov=i=>{const c=cats[i];return sg(c.avg)+c.avg.toFixed(1)+'% avg\n'+sd(c.dol)+fm(c.dol)+' NZD avg';};
+}
+
+// ── DETAIL ───────────────────────────────────────────────────────
+function drawDt(ci){
+  const cat=cats[ci];
+  document.getElementById('dt').textContent=cat.n+' — individual coefficients';
+  const cv=document.getElementById('dc');
+  const items=cat.items;
+  const dpr=window.devicePixelRatio||1;
+  const pL=130, pT=12, pB=36, rH=50, gap=6;
+  const H=pT+items.length*(rH+gap)+pB;
+  const pcts=items.map(x=>x.pct);
+  const mx=Math.max(...pcts.map(Math.abs),10)*1.28;
+
+  // right panel fills remaining space; use offsetWidth if available
+  const panelW=cv.parentElement.offsetWidth-28;
+  const pR=130; // fixed right margin for text
+  const W=Math.max(panelW,400);
+
+  cv.width=W*dpr; cv.height=H*dpr;
+  cv.style.width=W+'px'; cv.style.height=H+'px';
+  const ctx=cv.getContext('2d'); ctx.scale(dpr,dpr);
+  const cW=W-pL-pR;
+  const z=pL+(0-(-mx))/(2*mx)*cW;
+
+  ctx.clearRect(0,0,W,H);
+
+  // grid
+  [-1,-0.5,0,0.5,1].map(f=>parseFloat((f*mx).toFixed(1))).forEach(t=>{
+    const x=pL+(t-(-mx))/(2*mx)*cW;
+    ctx.strokeStyle=t===0?NAVY:'#EBF0F5'; ctx.lineWidth=t===0?1.2:0.5;
+    ctx.beginPath();ctx.moveTo(x,pT);ctx.lineTo(x,H-pB+8);ctx.stroke();
+    ctx.fillStyle=GRAY;ctx.font='9.5px sans-serif';ctx.textAlign='center';
+    ctx.save();ctx.translate(x,H-pB+16);ctx.rotate(-0.45);
+    ctx.fillText(t+'%',0,0);ctx.restore();
+  });
+
+  items.forEach((it,i)=>{
+    const y=pT+i*(rH+gap), cy=y+rH*0.38;
+    const p=it.pct, se=it.se, d=it.dol;
+    const col=p>=0?TEAL:RED, colD=p>=0?TD:RD;
+    const lo=p-1.96*se*100, hi=p+1.96*se*100;
+    const cx=pL+(p-(-mx))/(2*mx)*cW;
+    const cxL=pL+(lo-(-mx))/(2*mx)*cW;
+    const cxH=pL+(hi-(-mx))/(2*mx)*cW;
+
+    // CI dashed line
+    ctx.strokeStyle=col;ctx.lineWidth=2;ctx.globalAlpha=0.38;
+    ctx.setLineDash([4,3]);
+    ctx.beginPath();ctx.moveTo(cxL,cy);ctx.lineTo(cxH,cy);ctx.stroke();
+    ctx.setLineDash([]);ctx.globalAlpha=1;
+
+    // end caps
+    ctx.strokeStyle=col;ctx.lineWidth=1.8;ctx.globalAlpha=0.65;
+    [cxL,cxH].forEach(lx=>{ctx.beginPath();ctx.moveTo(lx,cy-5);ctx.lineTo(lx,cy+5);ctx.stroke();});
+    ctx.globalAlpha=1;
+
+    // dot
+    ctx.fillStyle=col;ctx.beginPath();ctx.arc(cx,cy,4.5,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='white';ctx.lineWidth=1.4;ctx.beginPath();ctx.arc(cx,cy,4.5,0,Math.PI*2);ctx.stroke();
+
+    // name
+    ctx.fillStyle=NAVY;ctx.font='11.5px sans-serif';ctx.textAlign='right';
+    ctx.fillText(it.n.length>18?it.n.slice(0,17)+'…':it.n,pL-7,cy+4);
+
+    // fixed text block on right
+    const tx=W-pR+8;
+    ctx.fillStyle=colD;ctx.font='bold 11.5px sans-serif';ctx.textAlign='left';
+    ctx.fillText(sg(p)+p.toFixed(1)+'%',tx,cy-4);
+    ctx.fillStyle='#4A5568';ctx.font='10px sans-serif';
+    ctx.fillText(sd(d)+fm(d)+' NZD',tx,cy+8);
+    ctx.fillStyle=GRAY;ctx.font='9px sans-serif';
+    ctx.fillText(sg(lo)+lo.toFixed(1)+'~'+sg(hi)+hi.toFixed(1)+'%',tx,cy+19);
+  });
+
+  cv._hit=items.map((_,i)=>({y:pT+i*(rH+gap),h:rH,i}));
+  cv._hov=i=>{const it=items[i];return sg(it.pct)+it.pct.toFixed(1)+'%\n'+sd(it.dol)+fm(it.dol)+' NZD';};
+  cv._click=null;
+}
+
+const tip=document.getElementById('tip');
+function ev(cv){
+  cv.addEventListener('mousemove',e=>{
+    const r=cv.getBoundingClientRect(),y=e.clientY-r.top;
+    const hit=cv._hit&&cv._hit.find(h=>y>=h.y&&y<=h.y+h.h);
+    if(hit&&cv._hov){
+      tip.style.display='block';
+      tip.style.left=(e.clientX+14)+'px';tip.style.top=(e.clientY-8)+'px';
+      tip.innerHTML=cv._hov(hit.i).replace(/\n/g,'<br>');
+      cv.style.cursor='pointer';
+    } else {tip.style.display='none';cv.style.cursor='default';}
+  });
+  cv.addEventListener('mouseleave',()=>tip.style.display='none');
+  cv.addEventListener('click',e=>{
+    const r=cv.getBoundingClientRect(),y=e.clientY-r.top;
+    const hit=cv._hit&&cv._hit.find(h=>y>=h.y&&y<=h.y+h.h);
+    if(hit&&cv._click)cv._click(hit.i);
+  });
+}
+
+ev(document.getElementById('oc'));
+ev(document.getElementById('dc'));
+drawOv(); drawDt(0);
+window.addEventListener('resize',()=>{drawOv();drawDt(sel);});
+</script>
+</body>
+</html>
